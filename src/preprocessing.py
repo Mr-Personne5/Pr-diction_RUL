@@ -7,6 +7,7 @@ UNIQUEMENT sur le train, jamais sur le val ou le test.
 
 import numpy as np
 import pandas as pd
+from sklearn.cluster import KMeans
 
 
 def split_by_unit(
@@ -40,6 +41,26 @@ def select_features(train_df: pd.DataFrame, feature_cols: list[str], std_thresho
     return train_std[train_std >= std_threshold].index.tolist()
 
 
+def select_features_by_regime(
+    train_df: pd.DataFrame, feature_cols: list[str], regimes: np.ndarray, std_threshold: float = 1e-2
+) -> list[str]:
+    """Comme select_features, mais calcule l'écart-type À L'INTÉRIEUR de chaque régime, et
+    ne garde une feature que si elle varie dans TOUS les régimes (le minimum des écarts-types
+    par régime dépasse std_threshold).
+
+    Sur FD002, un capteur peut être constant dans chaque régime pris isolément, tout en
+    semblant varier globalement à cause du changement de régime (ex. sensor_1, sensor_5,
+    sensor_18, sensor_19 : constants sur FD001, mais std global non nul sur FD002).
+    select_features (basé sur l'écart-type global) les garderait à tort, ce qui produit des
+    divisions par ~0 dans normalize_by_regime (NaN pendant l'entraînement). Cette fonction
+    doit être utilisée à la place de select_features avant toute normalisation par régime.
+    """
+    train_df = train_df.assign(_regime=regimes)
+    std_by_regime = train_df.groupby("_regime")[feature_cols].std()
+    min_std_across_regimes = std_by_regime.min(axis=0)
+    return min_std_across_regimes[min_std_across_regimes >= std_threshold].index.tolist()
+
+
 def compute_norm_stats(train_df: pd.DataFrame, feature_cols: list[str]) -> dict[str, pd.Series]:
     """Calcule la moyenne et l'écart-type de chaque feature, sur le train uniquement."""
     return {"mean": train_df[feature_cols].mean(), "std": train_df[feature_cols].std()}
@@ -53,6 +74,52 @@ def normalize(df: pd.DataFrame, feature_cols: list[str], stats: dict[str, pd.Ser
     """
     df = df.copy()
     df[feature_cols] = (df[feature_cols] - stats["mean"]) / stats["std"]
+    return df
+
+
+def fit_regime_clusters(train_df: pd.DataFrame, setting_cols: list[str], n_regimes: int = 6, seed: int = 42) -> KMeans:
+    """Ajuste un k-means sur les réglages opérationnels du train, pour retrouver les régimes
+    de fonctionnement discrets de FD002 (6 régimes fixes, cf. notebooks/09_fd002_regimes.ipynb).
+
+    Ajusté sur le train uniquement : le val/test sont ensuite assignés aux régimes déjà
+    trouvés (assign_regimes), jamais utilisés pour redéfinir les centres des clusters.
+    """
+    return KMeans(n_clusters=n_regimes, random_state=seed, n_init=10).fit(train_df[setting_cols])
+
+
+def assign_regimes(df: pd.DataFrame, setting_cols: list[str], regime_model: KMeans) -> np.ndarray:
+    """Assigne chaque ligne de df au régime le plus proche, selon un k-means déjà ajusté sur le train."""
+    return regime_model.predict(df[setting_cols])
+
+
+def compute_norm_stats_by_regime(train_df: pd.DataFrame, feature_cols: list[str], regimes: np.ndarray) -> dict:
+    """Comme compute_norm_stats, mais une moyenne/écart-type par régime : sur FD002, un
+    capteur peut avoir une valeur normale très différente selon le point de fonctionnement,
+    donc une seule statistique globale (comme sur FD001, un seul régime) confondrait
+    "changement de régime" et "dégradation du moteur".
+    """
+    train_df = train_df.assign(_regime=regimes)
+    return {
+        regime: {"mean": group[feature_cols].mean(), "std": group[feature_cols].std()}
+        for regime, group in train_df.groupby("_regime")
+    }
+
+
+def normalize_by_regime(
+    df: pd.DataFrame, feature_cols: list[str], regimes: np.ndarray, stats_by_regime: dict
+) -> pd.DataFrame:
+    """Applique une normalisation z-score, avec les stats du régime de chaque ligne (cf.
+    compute_norm_stats_by_regime). Les stats viennent toujours du train, y compris pour
+    normaliser le val/test.
+    """
+    df = df.copy()
+    # Cast en float AVANT l'assignation par masque : une colonne lue en int64 (capteur à
+    # valeurs entières) refuse silencieusement des valeurs flottantes ligne par ligne, alors
+    # qu'une normalisation produit toujours des floats.
+    df[feature_cols] = df[feature_cols].astype(float)
+    for regime, stats in stats_by_regime.items():
+        mask = regimes == regime
+        df.loc[mask, feature_cols] = (df.loc[mask, feature_cols] - stats["mean"]) / stats["std"]
     return df
 
 

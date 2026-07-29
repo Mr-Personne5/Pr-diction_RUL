@@ -15,9 +15,9 @@ sous-ensembles existent (FD001 à FD004), qui diffèrent par le nombre de régim
 1 mode de défaillance) et **FD002** (6 régimes, 1 mode de défaillance).
 
 La question de recherche centrale est double :
-1. Un modèle de séquence profond (LSTM/GRU, puis éventuellement Transformer) apporte-t-il un
-   gain mesurable sur la prédiction du RUL par rapport à une baseline classique (régression
-   linéaire / forêt aléatoire) ?
+1. Un modèle de séquence profond (LSTM, puis Transformer) apporte-t-il un gain mesurable sur la
+   prédiction du RUL par rapport à une baseline classique (régression linéaire / forêt
+   aléatoire) ?
 2. Ce gain — et la qualité de la prédiction en général — résiste-t-il au passage d'un seul
    régime opérationnel (FD001) à plusieurs régimes (FD002), qui exige une normalisation par
    régime pour rester comparable ?
@@ -29,13 +29,102 @@ imminente coûte plus cher que la surestimer.
 
 Le détail des phases, priorités et critères d'avancement est dans [`plan_execution.md`](plan_execution.md).
 
+## Résultats clés
+
+**FD001** (1 régime, 14 capteurs retenus sur 21) :
+
+| Modèle | RMSE (val) | Score asym. (val) | RMSE (test, ouvert une fois) |
+|---|---|---|---|
+| Régression linéaire | 21.54 | 77 666 | 17.77 |
+| Forêt aléatoire | 17.90 | 29 640 | 17.87 |
+| LSTM | 13.09 | 12 245 | **12.23** |
+| Transformer | 13.17 | 11 924 | — *(voir note ci-dessous)* |
+
+- Le LSTM (et le Transformer) battent nettement les baselines classiques (**H1 confirmée**).
+- Variance du LSTM sur 5 graines : RMSE = 13.25 ± 0.42 — le gain n'est pas un artefact d'une
+  seule initialisation favorable.
+- Sensibilité au plafond RUL (110/125/140) : effet réel mais modéré (RMSE relatif 9.8% → 11.1%) — **H4** : la conclusion générale tient quel que soit le plafond choisi dans cette plage.
+- Le Transformer n'a pas de score test : le test FD001 a été ouvert une seule fois
+  (`07_final_test_fd001.ipynb`), avant que le Transformer n'existe. Le rouvrir pour lui
+  aurait violé la règle d'ouverture unique du protocole — c'est une limite assumée.
+
+**FD002** (6 régimes opérationnels, confirmés par k-means) :
+
+| Configuration | Capteurs | RMSE (val) | Score asym. (val) |
+|---|---|---|---|
+| Normalisation globale (naïve, comme FD001) | 20 | 18.18 | 81 054 |
+| **Normalisation par régime** | 14 | **15.07** | **42 105** |
+| Transformer (normalisé par régime) | 14 | 15.63 | 50 028 |
+
+- La normalisation par régime réduit le RMSE de ~17% par rapport à une normalisation naïve qui
+  ignore les régimes (**H3 confirmée**).
+- FD001 → FD002 (même modèle, meilleure config de chaque côté) : RMSE 13.09 → 15.07, soit
+  **+15% de dégradation** — réelle mais modérée (**H2 partiellement confirmée**) : la
+  normalisation par régime contient la difficulté supplémentaire sans l'annuler.
+- Sur FD002, le LSTM devance légèrement le Transformer (contrairement à FD001, où ils sont
+  quasi à égalité) — l'attention n'apporte pas d'avantage systématique.
+- Le test FD002 n'a délibérément jamais été ouvert (hors périmètre du plan pour cette
+  comparaison).
+
+## Méthodologie (résumé)
+
+Pipeline commun à toutes les expériences, implémenté dans `src/preprocessing.py` :
+
+1. **Split train/val par moteur entier** (jamais par cycle) — un moteur n'apparaît jamais des
+   deux côtés, pour éviter toute fuite entre cycles quasi identiques.
+2. **Sélection des capteurs** : on écarte les capteurs constants/quasi-constants, sur la base de
+   l'écart-type calculé **sur le train uniquement**. Sur FD002 (plusieurs régimes), la variance
+   doit être vérifiée *à l'intérieur de chaque régime* (`select_features_by_regime`), sinon des
+   capteurs constants par régime mais variables globalement (à cause du seul changement de
+   régime) sont gardés à tort.
+3. **Normalisation z-score**, stats calculées sur le train uniquement ; par régime sur FD002
+   (`normalize_by_regime`, régimes détectés par k-means sur les 3 réglages opérationnels).
+4. **Cible RUL par morceaux, plafonnée** (125 par défaut) : RUL réel jusqu'à la panne, mais
+   plafonné en début de vie où la dégradation n'est pas encore visible dans les capteurs.
+5. **Fenêtrage glissant** (30 cycles) : toutes les fenêtres possibles pour le train/val, la
+   dernière fenêtre uniquement pour le test (seul point où le RUL est connu en conditions
+   réelles) ; padding par répétition de la première ligne pour les moteurs plus courts que la
+   fenêtre.
+
+Modèles (`src/torch_model.py`) : régression linéaire et forêt aléatoire (scikit-learn) sur
+features agrégées par fenêtre (moyenne/écart-type/dernière valeur) ; LSTM et Transformer léger
+(PyTorch) sur la séquence brute, tous deux lisant leur représentation du **dernier pas de
+temps** pour prédire le RUL (protocole de lecture identique, pour une comparaison équitable).
+
+Métriques (`src/metrics.py`) : RMSE (symétrique) et score asymétrique de Saxena & Goebel
+(pénalise plus les prédictions en retard que les prédictions en avance).
+
 ## Structure du dépôt
 
 ```
 DATA/CMaps/       données C-MAPSS (non versionnées, voir "Données" ci-dessous)
-notebooks/        notebooks Jupyter (chargement, EDA, modèles)
+src/              pipeline de préparation, métriques, modèles (testé, réutilisé par les notebooks)
+tests/            tests pytest de src/ (22 tests)
+notebooks/        notebooks Jupyter, un par étape du plan (voir "Guide de lecture" ci-dessous)
+models/           poids entraînés sauvegardés (ex. lstm_fd001_seed42.pt)
 Requirements.txt  dépendances Python figées
+plan_execution.md plan d'exécution détaillé, suivi phase par phase
 ```
+
+## Guide de lecture des notebooks
+
+| Notebook | Contenu |
+|---|---|
+| `01_data_loading_check.ipynb` | Chargement FD001/FD002, confirmation de la structure vs le readme des données |
+| `02_eda_fd001.ipynb` | EDA FD001 : variance des capteurs, capteurs constants/quasi-constants |
+| `03_pipeline_check.ipynb` | Démonstration du pipeline de préparation (sélection, normalisation, RUL, fenêtrage) |
+| `04_baseline_fd001.ipynb` | Baseline : régression linéaire et forêt aléatoire sur FD001 |
+| `05_lstm_fd001.ipynb` | LSTM sur FD001, sauvegarde des poids entraînés |
+| `06_lstm_seed_variance.ipynb` | Variance du LSTM sur 5 graines |
+| `07_final_test_fd001.ipynb` | **Ouverture unique** du test FD001, scores finaux des 3 modèles |
+| `08_rul_cap_sensitivity.ipynb` | Sensibilité au plafond RUL (110/125/140), sur le val |
+| `09_fd002_regimes.ipynb` | Identification des 6 régimes opérationnels de FD002 (k-means) |
+| `10_fd002_pipeline_check.ipynb` | Démonstration du pipeline régime-aware sur FD002 |
+| `11_fd002_ablation_regime.ipynb` | Ablation : normalisation par régime vs globale, sur FD002 |
+| `12_fd001_vs_fd002_comparison.ipynb` | Comparaison de dégradation FD001 → FD002 |
+| `13_transformer_fd001.ipynb` | Transformer léger sur FD001 |
+| `14_transformer_fd002.ipynb` | Transformer léger sur FD002 (régime-aware) |
+| `15_phase3_summary.ipynb` | Tableaux de synthèse finaux (tous modèles, FD001 et FD002) |
 
 ## Installation
 
@@ -49,6 +138,8 @@ python -m ipykernel install --user --name djob-cmapss --display-name "Python (Dj
 ```
 
 Ouvrir les notebooks dans `notebooks/` et sélectionner le kernel **Python (Djob venv)**.
+
+Lancer les tests : `pytest` depuis la racine du dépôt (22 tests, ~10s).
 
 ## Données
 
@@ -64,6 +155,34 @@ DATA/CMaps/
   RUL_FD00{1,2,3,4}.txt
 ```
 
+## Reproductibilité
+
+- Toutes les graines (split, initialisation des modèles, mélange des batches) sont fixées
+  explicitement (`src/torch_model.py::set_seed`), y compris le déterminisme cuDNN sur GPU
+  (sans quoi deux runs identiques divergent légèrement).
+- **`set_seed(seed)` doit être appelé AVANT de construire un modèle** : l'initialisation des
+  poids en dépend et ne peut pas être rejouée après coup (voir docstring de `train_model`).
+- Chaque jeu de test (FD001, dans `07_final_test_fd001.ipynb`) n'est ouvert qu'une seule fois,
+  conformément au protocole ; toute analyse de sensibilité ultérieure (plafond RUL, etc.) se
+  fait exclusivement sur le val.
+
+## Limites connues
+
+- La sélection de capteurs (`select_features` / `select_features_by_regime`) repose sur un
+  seuil d'écart-type fixe (1e-2), choisi à partir de l'écart observé sur FD001 entre capteurs
+  constants et informatifs — pas optimisé formellement.
+- Le Transformer (Phase 3) n'a pas de score sur le test FD001 (cf. "Résultats clés").
+- Le test FD002 n'a jamais été ouvert : la comparaison FD001/FD002 (H2) repose uniquement sur
+  le val.
+
 ## État d'avancement
 
-Voir [`plan_execution.md`](plan_execution.md) pour le suivi détaillé par phase.
+Les Phases 0 à 3 du plan sont complètes. Voir [`plan_execution.md`](plan_execution.md) pour le
+détail par phase et la partie transversale restante (rédaction du mémoire, reproductibilité).
+
+## Références
+
+- Saxena, Goebel, Simon & Eklund, *« Damage Propagation Modeling for Aircraft Engine
+  Run-to-Failure Simulation »*, PHM08, 2008 (jeu de données C-MAPSS + score asymétrique).
+- Heimes, *« Recurrent Neural Networks for Remaining Useful Life Estimation »*, PHM 2008 (RUL
+  par morceaux, plafonné).

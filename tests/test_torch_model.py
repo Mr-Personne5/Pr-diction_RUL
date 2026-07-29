@@ -1,8 +1,9 @@
 """Tests de src/torch_model.py sur des tenseurs synthétiques minuscules (rapide, pas de vraies données)."""
 
 import numpy as np
+import torch
 
-from src.torch_model import RULRegressor, set_seed, train_model
+from src.torch_model import RULRegressor, TransformerRULRegressor, set_seed, train_model
 
 
 def make_toy_data():
@@ -60,3 +61,24 @@ def test_train_model_keeps_best_val_epoch_not_last():
     from src.metrics import rmse
 
     assert abs(rmse(y_val, final_pred) - best_epoch["val_rmse"]) < 1e-5
+
+
+def test_transformer_output_shape():
+    model = TransformerRULRegressor(n_features=3, window_size=5, d_model=8, nhead=2, num_layers=1)
+    x = torch.randn(4, 5, 3)  # 4 fenêtres, 5 cycles, 3 capteurs
+
+    output = model(x)
+
+    assert output.shape == (4,)
+
+
+def test_transformer_trains_with_train_model():
+    # Vérifie que le Transformer s'intègre à train_model exactement comme le LSTM (même
+    # fonction d'entraînement, indépendante de l'architecture).
+    X_train, y_train, X_val, y_val = make_toy_data()
+    model = TransformerRULRegressor(n_features=3, window_size=5, d_model=8, nhead=2, num_layers=1)
+
+    _, history = train_model(model, X_train, y_train, X_val, y_val, epochs=3, batch_size=4, seed=0)
+
+    assert len(history) == 3
+    assert all(np.isfinite(h["val_rmse"]) for h in history)

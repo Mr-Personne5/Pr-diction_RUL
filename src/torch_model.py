@@ -45,6 +45,41 @@ class RULRegressor(nn.Module):
         return self.head(last_hidden).squeeze(-1)
 
 
+class TransformerRULRegressor(nn.Module):
+    """Encodeur Transformer léger : projection des capteurs vers d_model, embedding positionnel
+    appris (la fenêtre a une taille fixe, window_size), puis un encodeur à self-attention.
+
+    On lit la représentation du DERNIER pas de temps pour prédire le RUL — même principe que
+    RULRegressor (LSTM) qui lit son dernier état caché : les deux modèles sont comparés à
+    protocole de lecture égal, seule l'architecture change.
+    """
+
+    def __init__(
+        self,
+        n_features: int,
+        window_size: int = 30,
+        d_model: int = 64,
+        nhead: int = 4,
+        num_layers: int = 1,
+        dim_feedforward: int = 128,
+        dropout: float = 0.1,
+    ):
+        super().__init__()
+        self.input_proj = nn.Linear(n_features, d_model)
+        self.pos_embedding = nn.Parameter(torch.zeros(1, window_size, d_model))
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout, batch_first=True
+        )
+        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.head = nn.Linear(d_model, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.input_proj(x) + self.pos_embedding
+        x = self.encoder(x)
+        last_step = x[:, -1, :]  # dernier pas de temps, shape (batch, d_model)
+        return self.head(last_step).squeeze(-1)
+
+
 def train_model(
     model: nn.Module,
     X_train: np.ndarray,

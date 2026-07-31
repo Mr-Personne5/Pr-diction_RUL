@@ -126,6 +126,22 @@ plan_execution.md plan d'exécution détaillé, suivi phase par phase
 | `14_transformer_fd002.ipynb` | Transformer léger sur FD002 (régime-aware) |
 | `15_phase3_summary.ipynb` | Tableaux de synthèse finaux (tous modèles, FD001 et FD002) |
 
+## App de présentation (Streamlit)
+
+`app.py` est un tableau de bord de présentation du travail, à lancer avec :
+
+```bash
+streamlit run app.py
+```
+
+Quatre pages (navigation dans la barre latérale) :
+- **Contexte & méthode** — problématique et résumé du pipeline.
+- **Résultats FD001** / **Résultats FD002** — tableaux et figures repris des notebooks.
+- **Démo interactive** — choix du jeu de données (FD001/FD002) et de l'architecture
+  (LSTM/Transformer), charge le modèle sauvegardé correspondant (`models/*_seed42.pt`) et
+  prédit en direct le RUL d'un moteur de test choisi dans une liste, avec ses trajectoires de
+  capteurs.
+
 ## Installation
 
 ```bash

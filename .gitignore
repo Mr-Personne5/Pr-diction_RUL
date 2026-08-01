@@ -1,0 +1,50 @@
+# Données brutes (volumineuses, non versionnées)
+DATA/
+
+# Environnements virtuels
+venv/
+.venv/
+env/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Artefacts de modèles / expériences (sauf les 4 checkpoints utilisés par app.py : petits,
+# déterministes, et nécessaires pour que la démo Streamlit fonctionne après un git clone)
+*.pt
+*.pth
+*.ckpt
+!models/*.pt
+runs/
+outputs/
+
+# Fichiers temporaires Office
+~$*
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+
+# LaTeX (mémoire) : fichiers de build, on garde .tex/.bib et le PDF final
+memoire/*.aux
+memoire/*.log
+memoire/*.out
+memoire/*.toc
+memoire/*.lof
+memoire/*.lot
+memoire/*.bbl
+memoire/*.bcf
+memoire/*.blg
+memoire/*.glo
+memoire/*.gls
+memoire/*.glg
+memoire/*.acn
+memoire/*.acr
+memoire/*.alg
+memoire/*.ist
+memoire/*.run.xml
+memoire/*.synctex.gz

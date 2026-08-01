@@ -83,15 +83,18 @@ def show_fig(fig) -> None:
     plt.close(fig)
 
 
-def bar_chart(labels: list[str], values: list[float], colors: list[str], ylabel: str, value_fmt: str = "{:.2f}"):
+def bar_chart(labels: list[str], values: list[float], colors: list[str], ylabel: str, value_fmt: str = "{:.2f}", errors: list[float] | None = None):
     """Barres fines, labels de valeur visibles (mitigation du contraste sur aqua/jaune),
     grille horizontale discrète, pas d'axe double (une seule métrique par figure).
+    errors (optionnel) : écart-type par barre, affiché en barre d'erreur — pour ne jamais
+    montrer une moyenne sans sa dispersion quand elle est disponible (cf. 16_full_seed_variance).
     """
     fig, ax = plt.subplots(figsize=(5.5, 3.8))
-    bars = ax.bar(labels, values, color=colors, width=0.55, zorder=3)
-    for bar, value in zip(bars, values):
+    bars = ax.bar(labels, values, yerr=errors, capsize=5, color=colors, width=0.55, zorder=3)
+    for i, (bar, value) in enumerate(zip(bars, values)):
+        label_y = bar.get_height() + (errors[i] if errors is not None else 0)
         ax.text(
-            bar.get_x() + bar.get_width() / 2, bar.get_height(), value_fmt.format(value),
+            bar.get_x() + bar.get_width() / 2, label_y, value_fmt.format(value),
             ha="center", va="bottom", fontsize=10, color="#0b0b0b",
         )
     ax.set_ylabel(ylabel)
@@ -248,26 +251,33 @@ def page_resultats_fd001():
     st.title("Résultats — FD001")
 
     fd001 = pd.DataFrame([
-        {"modèle": "Régression linéaire", "RMSE_val": 21.536573, "score_asym_val": 77665.928021, "RMSE_test": 17.767336},
-        {"modèle": "Forêt aléatoire", "RMSE_val": 17.899715, "score_asym_val": 29640.942003, "RMSE_test": 17.869847},
-        {"modèle": "LSTM", "RMSE_val": 13.088298, "score_asym_val": 12245.140782, "RMSE_test": 12.225107},
-        {"modèle": "Transformer", "RMSE_val": 13.167391, "score_asym_val": 11923.526820, "RMSE_test": None},
+        {"modèle": "Régression linéaire", "RMSE_val": 21.536573, "RMSE_val_std": 0.0, "RMSE_test": 17.767336},
+        {"modèle": "Forêt aléatoire", "RMSE_val": 17.899715, "RMSE_val_std": 0.0, "RMSE_test": 17.869847},
+        {"modèle": "LSTM", "RMSE_val": 13.252112, "RMSE_val_std": 0.417263, "RMSE_test": 12.225107},
+        {"modèle": "Transformer", "RMSE_val": 12.903616, "RMSE_val_std": 0.273546, "RMSE_test": None},
     ])
     st.dataframe(fd001, hide_index=True, use_container_width=True)
 
     col1, col2 = st.columns(2)
     with col1:
-        show_fig(bar_chart(fd001["modèle"], fd001["RMSE_val"], [COLORS[m] for m in fd001["modèle"]], "RMSE (val)"))
+        show_fig(bar_chart(
+            fd001["modèle"], fd001["RMSE_val"], [COLORS[m] for m in fd001["modèle"]],
+            "RMSE (val, moyenne ± écart-type sur 5 graines)", errors=fd001["RMSE_val_std"],
+        ))
     with col2:
         test_df = fd001.dropna(subset=["RMSE_test"])
-        show_fig(bar_chart(test_df["modèle"], test_df["RMSE_test"], [COLORS[m] for m in test_df["modèle"]], "RMSE (test, ouvert une fois)"))
+        show_fig(bar_chart(test_df["modèle"], test_df["RMSE_test"], [COLORS[m] for m in test_df["modèle"]], "RMSE (test, ouvert une fois, graine 42)"))
         st.caption("Le Transformer n'a pas de score test : le test a été ouvert avant qu'il n'existe (règle d'ouverture unique).")
 
     st.markdown(
         """
-        **Conclusions** :
-        - LSTM et Transformer battent nettement les baselines (**H1 confirmée**).
-        - Variance du LSTM sur 5 graines : RMSE = 13.25 ± 0.42 — gain robuste au hasard de l'initialisation.
+        **Conclusions** (5 graines par modèle, test t de Welch — `16_full_seed_variance.ipynb`) :
+        - LSTM et Transformer battent nettement les baselines, de façon robuste sur 5 graines
+          chacun (**H1 confirmée**).
+        - **LSTM vs Transformer : pas de différence statistiquement significative** (13.25 ± 0.42
+          contre 12.90 ± 0.27, p = 0.16) — les deux architectures sont indiscernables au regard
+          de la variance inter-graines, malgré un écart de moyenne en apparence favorable au
+          Transformer.
         - Sensibilité au plafond RUL (110/125/140) : effet réel mais modéré (**H4**).
         """
     )
@@ -277,12 +287,12 @@ def page_resultats_fd002():
     st.title("Résultats — FD002 (6 régimes)")
 
     ablation = pd.DataFrame([
-        {"configuration": "Normalisation globale (naïve)", "RMSE": 18.178780, "score_asym": 81053.938110},
-        {"configuration": "Normalisation par régime", "RMSE": 15.074154, "score_asym": 42105.297588},
+        {"configuration": "Normalisation globale (naïve, seed 42)", "RMSE": 18.178780, "score_asym": 81053.938110},
+        {"configuration": "Normalisation par régime (seed 42)", "RMSE": 15.074154, "score_asym": 42105.297588},
     ])
     final = pd.DataFrame([
-        {"modèle": "LSTM", "RMSE": 15.074154, "score_asym": 42105.297588},
-        {"modèle": "Transformer", "RMSE": 15.633626, "score_asym": 50027.646116},
+        {"modèle": "LSTM", "RMSE": 15.213421, "RMSE_std": 0.130800},
+        {"modèle": "Transformer", "RMSE": 15.449031, "RMSE_std": 0.184626},
     ])
 
     col1, col2 = st.columns(2)
@@ -291,19 +301,25 @@ def page_resultats_fd002():
         st.dataframe(ablation, hide_index=True, use_container_width=True)
         show_fig(bar_chart(ablation["configuration"], ablation["RMSE"], [MUTED, COLORS["LSTM"]], "RMSE (val)"))
     with col2:
-        st.subheader("LSTM vs Transformer (régime-aware)")
+        st.subheader("LSTM vs Transformer (régime-aware, 5 graines)")
         st.dataframe(final, hide_index=True, use_container_width=True)
-        show_fig(bar_chart(final["modèle"], final["RMSE"], [COLORS[m] for m in final["modèle"]], "RMSE (val)"))
+        show_fig(bar_chart(
+            final["modèle"], final["RMSE"], [COLORS[m] for m in final["modèle"]],
+            "RMSE (val, moyenne ± écart-type)", errors=final["RMSE_std"],
+        ))
 
     st.markdown(
         """
-        **Conclusions** :
+        **Conclusions** (5 graines par modèle, test t de Welch — `16_full_seed_variance.ipynb`) :
         - La normalisation par régime réduit le RMSE de ~17% par rapport à une normalisation
           naïve qui ignore les régimes (**H3 confirmée**).
-        - FD001 → FD002 (meilleure config de chaque côté) : RMSE 13.09 → 15.07, soit **+15%**
-          de dégradation — réelle mais modérée (**H2 partiellement confirmée**).
-        - Sur FD002, le LSTM devance légèrement le Transformer — contrairement à FD001, où ils
-          sont quasi à égalité.
+        - **FD001 → FD002, avec incertitude des deux côtés** : LSTM 13.25 ± 0.42 → 15.21 ± 0.13,
+          soit **+14.8%** de dégradation, statistiquement très significative (p = 0.0002) — la
+          normalisation par régime contient la difficulté supplémentaire sans l'annuler
+          (**H2 confirmée**).
+        - **LSTM vs Transformer : pas de différence statistiquement significative** (15.21 ± 0.13
+          contre 15.45 ± 0.18, p = 0.05, à la limite du seuil conventionnel) — comme sur FD001,
+          aucune des deux architectures ne domine l'autre de façon défendable.
         """
     )
 

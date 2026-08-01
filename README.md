@@ -33,38 +33,51 @@ Le détail des phases, priorités et critères d'avancement est dans [`plan_exec
 
 **FD001** (1 régime, 14 capteurs retenus sur 21) :
 
-| Modèle | RMSE (val) | Score asym. (val) | RMSE (test, ouvert une fois) |
-|---|---|---|---|
-| Régression linéaire | 21.54 | 77 666 | 17.77 |
-| Forêt aléatoire | 17.90 | 29 640 | 17.87 |
-| LSTM | 13.09 | 12 245 | **12.23** |
-| Transformer | 13.17 | 11 924 | — *(voir note ci-dessous)* |
+| Modèle | RMSE (val, moyenne ± écart-type sur 5 graines) | RMSE (test, ouvert une fois, seed 42) |
+|---|---|---|
+| Régression linéaire | 21.54 | 17.77 |
+| Forêt aléatoire | 17.90 | 17.87 |
+| LSTM | 13.25 ± 0.42 | **12.23** |
+| Transformer | 12.90 ± 0.27 | — *(voir note ci-dessous)* |
 
-- Le LSTM (et le Transformer) battent nettement les baselines classiques (**H1 confirmée**).
-- Variance du LSTM sur 5 graines : RMSE = 13.25 ± 0.42 — le gain n'est pas un artefact d'une
-  seule initialisation favorable.
+- Le LSTM et le Transformer battent nettement les baselines classiques (**H1 confirmée**),
+  robuste sur 5 graines pour chacun des deux.
+- **LSTM vs Transformer sur FD001 : pas de différence statistiquement significative** (test t
+  de Welch, p = 0.16) — les deux architectures sont indiscernables au regard de la variance
+  inter-graines, malgré un écart de moyenne en apparence favorable au Transformer.
 - Sensibilité au plafond RUL (110/125/140) : effet réel mais modéré (RMSE relatif 9.8% → 11.1%) — **H4** : la conclusion générale tient quel que soit le plafond choisi dans cette plage.
-- Le Transformer n'a pas de score test : le test FD001 a été ouvert une seule fois
+- La colonne test correspond au modèle d'une seule graine précise (42), seul modèle jamais
+  évalué sur le test : le test FD001 a été ouvert une seule fois
   (`07_final_test_fd001.ipynb`), avant que le Transformer n'existe. Le rouvrir pour lui
-  aurait violé la règle d'ouverture unique du protocole — c'est une limite assumée.
+  aurait violé la règle d'ouverture unique du protocole — c'est une limite assumée, à laquelle
+  répondre explicitement en soutenance plutôt qu'à découvrir sur le moment.
 
 **FD002** (6 régimes opérationnels, confirmés par k-means) :
 
-| Configuration | Capteurs | RMSE (val) | Score asym. (val) |
-|---|---|---|---|
-| Normalisation globale (naïve, comme FD001) | 20 | 18.18 | 81 054 |
-| **Normalisation par régime** | 14 | **15.07** | **42 105** |
-| Transformer (normalisé par régime) | 14 | 15.63 | 50 028 |
+| Configuration | Capteurs | RMSE (val) |
+|---|---|---|
+| Normalisation globale (naïve, comme FD001, seed 42) | 20 | 18.18 |
+| **Normalisation par régime (seed 42)** | 14 | **15.07** |
+| LSTM, normalisé par régime (moyenne ± écart-type, 5 graines) | 14 | **15.21 ± 0.13** |
+| Transformer, normalisé par régime (moyenne ± écart-type, 5 graines) | 14 | 15.45 ± 0.18 |
 
 - La normalisation par régime réduit le RMSE de ~17% par rapport à une normalisation naïve qui
   ignore les régimes (**H3 confirmée**).
-- FD001 → FD002 (même modèle, meilleure config de chaque côté) : RMSE 13.09 → 15.07, soit
-  **+15% de dégradation** — réelle mais modérée (**H2 partiellement confirmée**) : la
-  normalisation par régime contient la difficulté supplémentaire sans l'annuler.
-- Sur FD002, le LSTM devance légèrement le Transformer (contrairement à FD001, où ils sont
-  quasi à égalité) — l'attention n'apporte pas d'avantage systématique.
+- **FD001 → FD002, avec incertitude des deux côtés (H2)** : LSTM 13.25 ± 0.42 → 15.21 ± 0.13,
+  soit **+14.8% de dégradation**, statistiquement très significative (test t de Welch,
+  p = 0.0002). La normalisation par régime contient la difficulté supplémentaire sans
+  l'annuler — **H2 confirmée**, cette fois avec une bande d'incertitude sur les deux volets.
+- **LSTM vs Transformer sur FD002 : pas de différence statistiquement significative** (p = 0.05,
+  à la limite du seuil conventionnel) — comme sur FD001, on ne peut pas affirmer qu'une
+  architecture domine l'autre sur ce problème à cette échelle de données.
 - Le test FD002 n'a délibérément jamais été ouvert (hors périmètre du plan pour cette
   comparaison).
+
+*Ces comparaisons statistiques (5 graines par configuration, test t de Welch) sont dans
+`notebooks/16_full_seed_variance.ipynb`, ajouté après une relecture externe du projet qui a
+souligné, à juste titre, qu'un classement LSTM/Transformer sur une seule graine chacun n'était
+pas défendable — voir aussi `scripts/run_full_seed_variance.py`, qui reproduit les mêmes
+entraînements avec sauvegarde incrémentale (utile pour les runs longs sur FD002).*
 
 ## Méthodologie (résumé)
 
@@ -102,6 +115,8 @@ src/              pipeline de préparation, métriques, modèles (testé, réuti
 tests/            tests pytest de src/ (22 tests)
 notebooks/        notebooks Jupyter, un par étape du plan (voir "Guide de lecture" ci-dessous)
 models/           poids entraînés sauvegardés (ex. lstm_fd001_seed42.pt)
+results/          résultats intermédiaires sauvegardés en CSV (ex. variance sur graines)
+scripts/          scripts autonomes (ex. run_full_seed_variance.py, avec checkpointing)
 Requirements.txt  dépendances Python figées
 plan_execution.md plan d'exécution détaillé, suivi phase par phase
 ```
@@ -125,6 +140,7 @@ plan_execution.md plan d'exécution détaillé, suivi phase par phase
 | `13_transformer_fd001.ipynb` | Transformer léger sur FD001 |
 | `14_transformer_fd002.ipynb` | Transformer léger sur FD002 (régime-aware) |
 | `15_phase3_summary.ipynb` | Tableaux de synthèse finaux (tous modèles, FD001 et FD002) |
+| `16_full_seed_variance.ipynb` | Variance manquante (LSTM FD002, Transformer FD001/FD002, 5 graines) + test t LSTM vs Transformer |
 
 ## App de présentation (Streamlit)
 
@@ -187,9 +203,22 @@ DATA/CMaps/
 - La sélection de capteurs (`select_features` / `select_features_by_regime`) repose sur un
   seuil d'écart-type fixe (1e-2), choisi à partir de l'écart observé sur FD001 entre capteurs
   constants et informatifs — pas optimisé formellement.
-- Le Transformer (Phase 3) n'a pas de score sur le test FD001 (cf. "Résultats clés").
+- Le Transformer (Phase 3) n'a pas de score sur le test FD001 (cf. "Résultats clés") : le
+  budget d'ouverture unique du test a été consommé en Phase 1, avant la conception du
+  Transformer. Une meilleure planification aurait réservé l'ouverture du test pour le modèle
+  final retenu par jeu de données, tout à la fin du projet.
 - Le test FD002 n'a jamais été ouvert : la comparaison FD001/FD002 (H2) repose uniquement sur
-  le val.
+  le val (mais désormais avec incertitude sur 5 graines des deux côtés, cf. "Résultats clés").
+- Les métriques de validation sont calculées **par fenêtre** (plusieurs par moteur), celles du
+  test **par moteur** (dernière fenêtre uniquement) : cohérent en interne pour les comparaisons
+  menées ici, mais val et test ne sont pas sur la même base d'échantillons.
+- Le score asymétrique utilisé pour comparer les graines (par fenêtre) n'est **pas** le score
+  canonique de la littérature (somme par moteur sur le test) : à ne jamais comparer directement
+  à des valeurs publiées, seulement en interne entre les configurations de ce projet.
+- Le RUL réel du test est plafonné à 125 avant le calcul du RMSE, ce qui abaisse mécaniquement
+  le RMSE affiché par rapport à un RUL non plafonné (les grosses erreurs de début de vie sont
+  coupées) — cohérent avec ce que les modèles ont appris à prédire, mais à mentionner
+  explicitement plutôt que de laisser un chiffre nu.
 
 ## État d'avancement
 

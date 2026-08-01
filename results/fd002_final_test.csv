@@ -1,0 +1,3 @@
+modèle,RMSE_test,score_asymétrique_test,RMSE_val (5 graines)
+LSTM,14.278912305238991,932.2896326607856,15.21 ± 0.13
+Transformer,13.75867414845029,837.8375942843955,15.45 ± 0.18

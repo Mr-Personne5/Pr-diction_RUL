@@ -117,7 +117,8 @@ notebooks/        notebooks Jupyter, un par étape du plan (voir "Guide de lectu
 models/           poids entraînés sauvegardés (ex. lstm_fd001_seed42.pt)
 results/          résultats intermédiaires sauvegardés en CSV (ex. variance sur graines)
 scripts/          scripts autonomes (ex. run_full_seed_variance.py, avec checkpointing)
-Requirements.txt  dépendances Python figées
+requirements-dev.txt  dépendances Python figées, dev local (notebooks, tests, entraînement GPU)
+requirements.txt      dépendances minimales pour le déploiement de app.py (Streamlit Cloud, CPU)
 plan_execution.md plan d'exécution détaillé, suivi phase par phase
 ```
 
@@ -141,6 +142,7 @@ plan_execution.md plan d'exécution détaillé, suivi phase par phase
 | `14_transformer_fd002.ipynb` | Transformer léger sur FD002 (régime-aware) |
 | `15_phase3_summary.ipynb` | Tableaux de synthèse finaux (tous modèles, FD001 et FD002) |
 | `16_full_seed_variance.ipynb` | Variance manquante (LSTM FD002, Transformer FD001/FD002, 5 graines) + test t LSTM vs Transformer |
+| `17_final_test_fd002.ipynb` | **Ouverture unique** du test FD002, scores finaux LSTM/Transformer |
 
 ## App de présentation (Streamlit)
 
@@ -158,6 +160,10 @@ Quatre pages (navigation dans la barre latérale) :
   prédit en direct le RUL d'un moteur de test choisi dans une liste, avec ses trajectoires de
   capteurs.
 
+Déployé sur Streamlit Community Cloud, l'app installe ses dépendances depuis `requirements.txt`
+(minuscules — nom attendu par Streamlit Cloud, distinct de `requirements-dev.txt` utilisé en
+local) : un sous-ensemble minimal en CPU (pas de build CUDA, l'app ne fait que de l'inférence).
+
 ## Installation
 
 ```bash
@@ -165,7 +171,7 @@ git clone <url-du-depot>
 cd Djob
 python -m venv .venv
 .venv\Scripts\activate
-pip install -r Requirements.txt
+pip install -r requirements-dev.txt
 python -m ipykernel install --user --name djob-cmapss --display-name "Python (Djob venv)"
 ```
 

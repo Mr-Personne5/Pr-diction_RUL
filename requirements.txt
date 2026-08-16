@@ -1,0 +1,11 @@
+# Dépendances minimales pour le déploiement de app.py sur Streamlit Community Cloud.
+# Streamlit Cloud (Linux, sans GPU) cherche spécifiquement ce nom de fichier en minuscules.
+# Pour le développement local complet (notebooks, tests, entraînement GPU), voir requirements-dev.txt.
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+streamlit==1.60.0
+torch==2.7.0
+numpy==2.5.1
+pandas==3.0.3
+matplotlib==3.11.0
+scikit-learn==1.9.0

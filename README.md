@@ -146,6 +146,8 @@ plan_execution.md plan d'exécution détaillé, suivi phase par phase
 
 ## App de présentation (Streamlit)
 
+**Démo en ligne : [fvu9pe8l5aqcufuntcdhst.streamlit.app](https://fvu9pe8l5aqcufuntcdhst.streamlit.app/)**
+
 `app.py` est un tableau de bord de présentation du travail, à lancer avec :
 
 ```bash
